@@ -1,35 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
-import { gql } from 'graphql-request';
 import { graphQlClient } from 'src/common/graphql/client';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { mutationCreateUser, mutationUpdateUser } from 'src/graphql/user.mutation';
+import { queryGetUserById, queryGetUsers } from 'src/graphql/user.query';
 
 @Injectable()
 export class UsersService {
-  async create(dto: CreateEmployeeDto) {
-    const mutation = gql`
-            mutation CreateUser(input: CreateUserInput!){
-                createUser(input: $input){
-                    user{
-                        id
-                        employeeId
-                        firstName
-                        lastName
-                        phone
-                        email
-                        address
-                        gender
-                        dateOfBirth
-                        level
-                        role
-                        department
-                        startDate
-                        status
-                    }
-                }
-            }
-        `;
+  async getAll() {
+    return graphQlClient.request(queryGetUsers)
+  };
 
+  async getOne(id: number) {
+    return graphQlClient.request(queryGetUserById, { id });
+  }
+
+  async create(dto: CreateEmployeeDto) {
     const variables = {
       input: {
         user: {
@@ -50,34 +36,11 @@ export class UsersService {
       },
     };
 
-    return graphQlClient.request(mutation, variables);
+    return graphQlClient.request(mutationCreateUser, variables);
   }
 
   async update(id: number, dto: UpdateEmployeeDto) {
-    const mutation = gql`
-      mutation UpdateUser($id: Int!, $patch: UserPatch!) {
-        updateUserById(input: { id: $id, userPatch: $patch }) {
-          user {
-            id
-            employeeId
-            firstName
-            lastName
-            phone
-            email
-            address
-            gender
-            dateOfBirth
-            level
-            role
-            department
-            startDate
-            status
-          }
-        }
-      }
-    `;
-
-    return graphQlClient.request(mutation, {
+    return graphQlClient.request(mutationUpdateUser, {
       id,
       patch: dto,
     });
