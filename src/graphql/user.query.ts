@@ -43,3 +43,33 @@ export const queryGetUserById = gql`
     }
   }
 `;
+
+export const queryGetUsersPaging = gql`
+  query(
+    $first: Int!
+    $offset: Int!
+  ){
+    allUsers(
+      first: $first
+      offset: $offset
+    ){
+      totalCount
+      nodes{
+        id
+        employeeId
+        firstName
+        lastName
+        gender
+        dateOfBirth
+        phone
+        email
+        address
+        level
+        role
+        department
+        startDate
+        status
+      }  
+    }
+  }
+`;

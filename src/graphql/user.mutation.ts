@@ -45,3 +45,53 @@ export const mutationUpdateUser = gql`
     }
   }
 `;
+
+export const mutationDeleteUser = gql`
+  mutation DeleteUser($id: Int!) {
+    deleteUserById(input: { id: $id }) {
+      user {
+        id
+        employeeId
+        firstName
+        lastName
+        phone
+        email
+        address
+        gender
+        dateOfBirth
+        level
+        role
+        department
+        startDate
+        status
+      }
+    }
+  }
+`;
+
+export const mutationCreateUsersImportRaw = gql`
+  mutation CreateUsersImportRaw($input: CreateUsersImportRawInput!) {
+    createUsersImportRaw(input: $input) {
+      usersImportRaw {
+        id
+        employeeId
+        firstName
+        lastName
+        phone
+        email
+        address
+        gender
+        dateOfBirth
+        level
+        role
+        department
+        startDate
+        status
+        isScanned
+        isValid
+        errorMessage
+        processedAt
+      }
+    }
+  }
+`;
