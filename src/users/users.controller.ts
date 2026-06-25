@@ -24,6 +24,19 @@ export class UsersController {
   //   return this.userService.getAll();
   // }
 
+  @Get('import/history')
+  getImportHistory(
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+    @Query('status') status = 'ALL',
+  ) {
+    return this.userService.getImportHistory(
+      Number(page),
+      Number(limit),
+      status,
+    );
+  }
+
   @Get(':id')
   getOne(@Param('id') id: string) {
     return this.userService.getOne(Number(id));

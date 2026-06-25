@@ -95,3 +95,22 @@ export const mutationCreateUsersImportRaw = gql`
     }
   }
 `;
+
+export const mutationUpdateUsersImportRaw = gql`
+  mutation UpdateUsersImportRaw($id: Int!, $patch: UsersImportRawPatch!) {
+    updateUsersImportRawById(
+      input: {
+        id: $id
+        usersImportRawPatch: $patch
+      }
+    ) {
+      usersImportRaw {
+        id
+        isScanned
+        isValid
+        errorMessage
+        processedAt
+      }
+    }
+  }
+`;

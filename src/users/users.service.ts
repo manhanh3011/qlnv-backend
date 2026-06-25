@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { graphQlClient } from 'src/common/graphql/client';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
@@ -7,10 +11,18 @@ import {
   mutationCreateUsersImportRaw,
   mutationDeleteUser,
   mutationUpdateUser,
+  mutationUpdateUsersImportRaw,
 } from 'src/graphql/user.mutation';
-import { queryGetUserById, queryGetUsers, queryGetUsersPaging } from 'src/graphql/user.query';
+import {
+  queryFindUserByEmail,
+  queryFindUserByEmployeeId,
+  queryGetUserById,
+  queryGetUsers,
+  queryGetUsersImportRawHistory,
+  queryGetUsersImportRawPending,
+  queryGetUsersPaging,
+} from 'src/graphql/user.query';
 import * as XLSX from 'xlsx';
-import { randomUUID } from 'crypto';
 
 @Injectable()
 export class UsersService {
@@ -21,12 +33,10 @@ export class UsersService {
   async findAll(page: number = 1, limit: number = 10) {
     const offset = (page - 1) * limit;
 
-    const result = await graphQlClient.request(
-      queryGetUsersPaging,
-      {
-        first: limit, offset
-      }
-    );
+    const result = await graphQlClient.request(queryGetUsersPaging, {
+      first: limit,
+      offset,
+    });
 
     return {
       data: result.allUsers.nodes,
@@ -35,9 +45,9 @@ export class UsersService {
         limit,
         total: result.allUsers.totalCount,
         totalPages: Math.ceil(result.allUsers.totalCount / limit),
-      }
+      },
     };
-  };
+  }
 
   async getOne(id: number) {
     return graphQlClient.request(queryGetUserById, { id });
@@ -99,23 +109,46 @@ export class UsersService {
     }
 
     const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: null });
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+      defval: null,
+    });
+    console.log(rows[0]);
 
     if (!rows.length) {
       throw new BadRequestException('NO_ROWS_FOUND');
     }
 
-    const importBatchId = randomUUID();
-
-    for (let i = 0; i < rows.length; i += 50){
+    for (let i = 0; i < rows.length; i += 50) {
       const chunk = rows.slice(i, i + 50);
 
       await Promise.all(
-        chunk.map((row, index) =>
+        chunk.map((row) =>
           this.createUsersImportRaw({
-            importBatchId,
-            rowNumber: i + index + 2,
-            rawData: row,
+            employeeId: String(row.employeeId ?? ''),
+            firstName: String(row.firstName ?? ''),
+            lastName: String(row.lastName ?? ''),
+            email: String(row.email ?? ''),
+            phone: String(row.phone ?? ''),
+            gender: String(row.gender ?? ''),
+            dateOfBirth:
+              typeof row.dateOfBirth === 'number'
+                ? this.excelDateToString(row.dateOfBirth)
+                : row.dateOfBirth,
+
+            address: String(row.address ?? ''),
+            department: String(row.department ?? ''),
+            role: String(row.role ?? ''),
+            level: String(row.level ?? ''),
+            startDate:
+              typeof row.startDate === 'number'
+                ? this.excelDateToString(row.startDate)
+                : row.startDate,
+
+            status: String(row.status ?? 'ACTIVE'),
+            isScanned: false,
+            isValid: null,
+            errorMessage: null,
+            processedAt: null,
           }),
         ),
       );
@@ -123,28 +156,128 @@ export class UsersService {
 
     return {
       message: 'IMPORT_FILE_UPLOADED',
-      importBatchId,
       totalRows: rows.length,
-    }
+    };
   }
 
-  private createUsersImportRaw(payload: {
-    importBatchId: string;
-    rowNumber: number;
-    rawData: Record<string, unknown>;
-  }) {
+  async createUsersImportRaw(data) {
     return graphQlClient.request(mutationCreateUsersImportRaw, {
       input: {
-        usersImportRaw: {
-          importBatchId: payload.importBatchId,
-          rowNumber: payload.rowNumber,
-          rawData: payload.rawData,
-          status: 'PENDING',
-        },
+        usersImportRaw: data,
       },
     });
   }
+
+  async getPendingImportRows() {
+    const result = await graphQlClient.request(queryGetUsersImportRawPending, {
+      first: 50,
+    });
+    return result.allUsersImportRaws.nodes;
+  }
+
+  async getImportHistory(page: number = 1, limit: number = 10, status = 'ALL') {
+    const offset = (page - 1) * limit;
+    const condition  = this.getImportHistoryCondition(status);
+
+    const result = await graphQlClient.request(queryGetUsersImportRawHistory, {
+      first: limit,
+      offset,
+      condition ,
+    });
+
+    const total = result.allUsersImportRaws.totalCount;
+
+    return {
+      data: result.allUsersImportRaws.nodes,
+      summary: {
+        total,
+        valid: result.validRows.totalCount,
+        invalid: result.invalidRows.totalCount,
+        pending: result.pendingRows.totalCount,
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  private getImportHistoryCondition(status: string) {
+    if (status === 'VALID') {
+      return {
+        isValid: true,
+      };
+    }
+
+    if (status === 'INVALID') {
+      return {
+        isValid: false,       
+      };
+    }
+
+    if (status === 'PENDING') {
+      return {
+        isScanned: false,
+      };
+    }
+
+    return null;
+  }
+
+  async updateImportRawStatus(
+    id: number,
+    data: {
+      isScanned: boolean;
+      isValid: boolean;
+      errorMessage: string | null;
+      processedAt: Date;
+    },
+  ) {
+    return graphQlClient.request(mutationUpdateUsersImportRaw, {
+      id, patch: data
+    });
+  }
+
+  async isEmployeeIdExits(employeeId: string) {
+    const result = await graphQlClient.request(queryFindUserByEmployeeId, {
+      employeeId
+    });
+    return result.allUsers.nodes.length > 0;
+  }
+
+  async isEmailExits(email: string) {
+    const result = await graphQlClient.request(queryFindUserByEmail, {
+      email,
+    });
+    return result.allUsers.nodes.length > 0;
+  }
+
+  async createUserFromImportRaw(row) {
+    return this.create({
+      employeeId: row.employeeId,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      email: row.email,
+      phone: row.phone,
+      gender: row.gender,
+      dateOfBirth: new Date(row.dateOfBirth),
+      address: row.address,
+      department: row.department,
+      role: row.role,
+      level: row.level,
+      startDate: new Date(row.startDate),
+      status: row.status,
+    });
+  }
   
+  private excelDateToString(excelDate: number): string {
+    const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+
+    return date.toISOString().split('T')[0];
+  }
+
   private handleGraphQlError(error: unknown): never {
     const message = error instanceof Error ? error.message : String(error);
     const normalizedMessage = message.toLowerCase();
