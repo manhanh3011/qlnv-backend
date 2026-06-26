@@ -23,9 +23,14 @@ import {
   queryGetUsersPaging,
 } from 'src/graphql/user.query';
 import * as XLSX from 'xlsx';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { ProducerService } from 'src/producer/producer.service';
 
 @Injectable()
 export class UsersService {
+  constructor(private readonly producerService: ProducerService) { }
+  
   async getAll() {
     return graphQlClient.request(queryGetUsers);
   }
@@ -154,6 +159,8 @@ export class UsersService {
       );
     }
 
+    await this.producerService.scanRawEmployee();
+
     return {
       message: 'IMPORT_FILE_UPLOADED',
       totalRows: rows.length,
@@ -224,6 +231,96 @@ export class UsersService {
     }
 
     return null;
+  }
+
+  async processPendingImportUsers() {
+    while (true) {
+        const rows = await this.getPendingImportRows();
+        if (!rows.length) {
+            break;
+        }
+        for (const row of rows) {
+            await this.processRow(row);
+        }
+    }
+  }
+
+  private async processRow(row: any) {
+    const errors: string[] = [];
+
+    const dto = plainToInstance(CreateEmployeeDto, {
+      employeeId: row.employeeId,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      email: row.email,
+      phone: row.phone,
+      gender: row.gender,
+      dateOfBirth: row.dateOfBirth,
+      address: row.address,
+      department: row.department,
+      role: row.role,
+      level: row.level,
+      startDate: row.startDate,
+      status: row.status,
+    });
+
+    const dtoErrors = await this.validateImportRow(dto);
+
+    errors.push(...dtoErrors);
+
+    const duplicateErrors = await this.checkDuplicate(dto);
+
+    errors.push(...duplicateErrors);
+
+    if (errors.length) {
+      await this.markImportFailed(row.id, errors);
+      return;
+    }
+    await this.create(dto);
+    await this.markImportSuccess(row.id);
+  }
+
+  //validateDTO
+  private async validateImportRow(dto: CreateEmployeeDto): Promise<string[]> {
+    const errors = await validate(dto);
+    return errors.flatMap((error) => Object.values(error.constraints ?? {}));
+  }
+
+  //Check duplicate
+  private async checkDuplicate(dto: CreateEmployeeDto): Promise<string[]> {
+    const errors: string[] = [];
+    const employee = await this.isEmployeeIdExits(dto.employeeId);
+
+    if (employee) {
+      errors.push('Mã nhân viên đã tồn tại');
+    }
+
+    const email = await this.isEmailExits(dto.email);
+
+    if (email) {
+      errors.push('Email đã tồn tại');
+    }
+    return errors;
+  }
+
+  //Update Raw khi lỗi
+  private async markImportFailed(id: number, errors: string[]) {
+    await this.updateImportRawStatus(id, {
+      isScanned: true,
+      isValid: false,
+      errorMessage: errors.join('; '),
+      processedAt: new Date(),
+    });
+  }
+
+  //Update Raw khi thành công
+  private async markImportSuccess(id: number) {
+    await this.updateImportRawStatus(id, {
+      isScanned: true,
+      isValid: true,
+      errorMessage: null,
+      processedAt: new Date(),
+    });
   }
 
   async updateImportRawStatus(

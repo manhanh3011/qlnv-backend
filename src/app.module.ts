@@ -3,9 +3,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { RabbitModule } from './rabbitmq/rabbit.module';
 
 @Module({
-  imports: [UsersModule, ScheduleModule.forRoot()],
+  imports: [UsersModule, RabbitModule, ScheduleModule.forRoot()],
   controllers: [AppController],
   providers: [AppService],
 })
